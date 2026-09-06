@@ -1,0 +1,98 @@
+---
+# PostgreSQL Post DB - PersistentVolumeClaim
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-post-pvc
+  namespace: feed-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+# PostgreSQL Post DB - Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-post
+  namespace: feed-system
+  labels:
+    app: postgres-post
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-post
+  template:
+    metadata:
+      labels:
+        app: postgres-post
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "postdb"
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: feed-system-secrets
+                  key: POSTGRES_POST_PASSWORD
+          volumeMounts:
+            - name: postgres-post-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - postdb
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - postdb
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: postgres-post-data
+          persistentVolumeClaim:
+            claimName: postgres-post-pvc
+---
+# PostgreSQL Post DB - Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-post
+  namespace: feed-system
+spec:
+  selector:
+    app: postgres-post
+  ports:
+    - port: 5432
+      targetPort: 5432

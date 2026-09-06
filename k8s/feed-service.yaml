@@ -1,0 +1,113 @@
+---
+# Feed Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: feed-service
+  namespace: feed-system
+  labels:
+    app: feed-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: feed-service
+  template:
+    metadata:
+      labels:
+        app: feed-service
+    spec:
+      containers:
+        - name: feed-service
+          image: distributed-feed/feed-service:latest
+          ports:
+            - containerPort: 50053
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: feed-system-config
+                  key: REDIS_URL
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: feed-system-config
+                  key: KAFKA_BROKERS
+            - name: USER_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: feed-system-config
+                  key: USER_SERVICE_URL
+            - name: GRPC_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: feed-system-config
+                  key: GRPC_PORT_FEED
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          livenessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - "require('net').createConnection(50053, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - "require('net').createConnection(50053, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+# Feed Service - ClusterIP Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: feed-service
+  namespace: feed-system
+spec:
+  selector:
+    app: feed-service
+  ports:
+    - port: 50053
+      targetPort: 50053
+  type: ClusterIP
+---
+# Feed Service - HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: feed-service-hpa
+  namespace: feed-system
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: feed-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

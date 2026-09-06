@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: feed-system-config
+  namespace: feed-system
+data:
+  KAFKA_BROKERS: "kafka:29092"
+  REDIS_URL: "redis://redis:6379"
+  USER_SERVICE_URL: "user-service:50051"
+  POST_SERVICE_URL: "post-service:50052"
+  FEED_SERVICE_URL: "feed-service:50053"
+  DATABASE_URL_USER: "postgresql://postgres:postgres@postgres-user:5432/userdb"
+  DATABASE_URL_POST: "postgresql://postgres:postgres@postgres-post:5432/postdb"
+  GRPC_PORT_USER: "50051"
+  GRPC_PORT_POST: "50052"
+  GRPC_PORT_FEED: "50053"
+  WS_PORT: "3001"
+  PORT: "3000"
+  NODE_ENV: "production"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: feed-system-secrets
+  namespace: feed-system
+type: Opaque
+stringData:
+  JWT_SECRET: "your-super-secure-jwt-secret-change-in-production"
+  POSTGRES_USER_PASSWORD: "postgres"
+  POSTGRES_POST_PASSWORD: "postgres"
