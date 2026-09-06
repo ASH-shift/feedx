@@ -1,0 +1,12 @@
+{
+  "name": "distributed-feed-system",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "services/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev": "docker-compose up --build"
+  }
+}
