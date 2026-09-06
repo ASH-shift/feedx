@@ -1,0 +1,201 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_4LW_COMMANDS_SAFELIST: "ruok,srvr,stat"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo srvr | nc localhost 2181 | grep -q Mode"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - feed-net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_LOG_RETENTION_HOURS: 168
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:29092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - feed-net
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis-data:/data
+    networks:
+      - feed-net
+
+  postgres-user:
+    image: postgres:16-alpine
+    container_name: postgres-user
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: userdb
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d userdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres-user-data:/var/lib/postgresql/data
+    networks:
+      - feed-net
+
+  postgres-post:
+    image: postgres:16-alpine
+    container_name: postgres-post
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postdb
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d postdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres-post-data:/var/lib/postgresql/data
+    networks:
+      - feed-net
+
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    container_name: user-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-user:5432/userdb
+      KAFKA_BROKERS: kafka:29092
+      GRPC_PORT: 50051
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      postgres-user:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - feed-net
+
+  post-service:
+    build:
+      context: .
+      dockerfile: services/post-service/Dockerfile
+    container_name: post-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-post:5432/postdb
+      KAFKA_BROKERS: kafka:29092
+      GRPC_PORT: 50052
+    depends_on:
+      postgres-post:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - feed-net
+
+  feed-service:
+    build:
+      context: .
+      dockerfile: services/feed-service/Dockerfile
+    container_name: feed-service
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:29092
+      USER_SERVICE_URL: user-service:50051
+      GRPC_PORT: 50053
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - feed-net
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    container_name: notification-service
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      USER_SERVICE_URL: user-service:50051
+      WS_PORT: 3001
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - feed-net
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      USER_SERVICE_URL: user-service:50051
+      POST_SERVICE_URL: post-service:50052
+      FEED_SERVICE_URL: feed-service:50053
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      PORT: 3000
+    depends_on:
+      - user-service
+      - post-service
+      - feed-service
+    networks:
+      - feed-net
+
+volumes:
+  redis-data:
+  postgres-user-data:
+  postgres-post-data:
+
+networks:
+  feed-net:
+    driver: bridge

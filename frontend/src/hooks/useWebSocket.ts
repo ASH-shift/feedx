@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { useNotificationStore } from '@/store/notificationStore';
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001/ws';
 const MAX_RETRIES = 5;
 const BASE_DELAY_MS = 1000;
 
