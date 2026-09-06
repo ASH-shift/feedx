@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package feed;
+
+service FeedService {
+  rpc GetFeed(GetFeedRequest) returns (GetFeedResponse);
+}
+
+message GetFeedRequest {
+  string user_id = 1;
+  int32 page = 2;
+  int32 limit = 3;
+}
+
+message FeedItem {
+  string post_id = 1;
+  string user_id = 2;
+  string username = 3;
+  string content = 4;
+  int64 created_at = 5;
+}
+
+message GetFeedResponse {
+  repeated FeedItem items = 1;
+  int32 page = 2;
+  int32 limit = 3;
+}
